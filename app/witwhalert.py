@@ -2,21 +2,22 @@ import requests, json, time, logging
 import os, tweepy
 from dotenv import load_dotenv
 
+load_dotenv()
 
 # Explorer API url
-explorer_url = 'https://witnet.network/api'
+explorer_url = os.getenv('explorer_url')
 
 # Explorer polling interval (secs). Be nice!
-poll_secs_interval = 60
+poll_secs_interval = int(os.getenv('poll_secs_interval'))
 
 # Values (in WIT) over this threshold trigger a tweet
-value_threshold = 60000
+value_threshold = int(os.getenv('value_threshold'))
 
 # Publish alerts as tweets
-enable_tweets = False
+# Careful with booleans! dotenv retrieves config purely as strings.
+enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
 
 # Twitter stuff
-load_dotenv()
 consumer_key = os.getenv('consumer_key')
 consumer_secret = os.getenv('consumer_secret')
 client = ""
@@ -152,8 +153,10 @@ def setup_twitter_api():
                           access_token = auth.access_token,
                           access_token_secret = auth.access_token_secret)
 
+
 def twitter_post(message):
   response = client.create_tweet(text=message)
+
 
 def start_up():
   #logging.basicConfig(filename='witwhalert.log', level=logging.INFO)
