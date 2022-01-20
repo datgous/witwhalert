@@ -124,7 +124,7 @@ def print_block_info(block_dict):
     for tx in value_txns:
       # Log to console and send twit if over threshold
       scaled_value = tx['txn_value']*1E-9
-      print(f"    >> Account {tx['real_output_address']} received * {scaled_value:.2f} * WITs (txn hash: {tx['txn_hash']})")
+      print(f"    >> Account {tx['real_output_address']} received * {scaled_value:.0f} * WITs (txn hash: {tx['txn_hash']})")
 
       if scaled_value >= value_threshold:
         msg=f"    🦎🐳🔔 * 💰 {scaled_value:.2f} WITs changed hands! 💸 Assets went to {tx['real_output_address']}. 👀 See the transaction log -> https://witnet.network/search/{tx['txn_hash']}"
