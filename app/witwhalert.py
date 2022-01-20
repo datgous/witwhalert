@@ -1,6 +1,7 @@
-import requests, json, time
+import requests, json, time, logging
 import os, tweepy
 from dotenv import load_dotenv
+
 
 # Explorer API url
 explorer_url = 'https://witnet.network/api'
@@ -12,7 +13,7 @@ poll_secs_interval = 60
 value_threshold = 60000
 
 # Publish alerts as tweets
-enable_tweets = True
+enable_tweets = False
 
 # Twitter stuff
 load_dotenv()
@@ -69,6 +70,28 @@ def get_last_epoch():
     last_epoch = 0
 
   return last_epoch
+
+
+def get_last_confirmed_epoch():
+  last_epoch = get_last_epoch()
+  look_back  = 10
+  confirmed_epoch = 0
+
+  while confirmed_epoch == 0:
+
+    target_epoch = last_epoch - look_back
+    block_sample = update_blocks(target_epoch)
+
+    for block in block_sample['blockchain']:
+      logging.debug(f'Checking {block[0]} for confirmed status...')
+      block_confirmed = block[10]
+      if block_confirmed:
+        confirmed_epoch = block[1]
+        logging.info(f'{block[1]} - latest confirmed block is {block[0]}.')
+        break
+    look_back = look_back + look_back
+
+  return confirmed_epoch
 
 
 def get_value_txns(block_hash):
@@ -132,18 +155,23 @@ def setup_twitter_api():
 def twitter_post(message):
   response = client.create_tweet(text=message)
 
+def start_up():
+  #logging.basicConfig(filename='witwhalert.log', level=logging.INFO)
+  logging.basicConfig(level=logging.INFO)
+  logging.info("witwhalert v0.0.1")
+  logging.info(f'Alert set on transactions >= [{value_threshold}] WITs.')
+  logging.info(f'Enable tweets is [{enable_tweets}].' )
+  print()
+
 
 def main():
-  print("witwhalert v0.0.1")
-  print(f'Alert set on transactions >= [{value_threshold}] WITs.')
-  print(f'Enable tweets is [{enable_tweets}].' )
-  print()
+  start_up()
 
   if enable_tweets:
     setup_twitter_api()
 
-  oldest_epoch = get_last_epoch() - 1
-  #oldest_epoch = 878638
+  oldest_epoch = get_last_confirmed_epoch() - 1
+  #oldest_epoch = 888302
 
   while True:
 
@@ -152,14 +180,24 @@ def main():
     if (get_last_epoch() > oldest_epoch):
 
       latest_blocks = update_blocks( oldest_epoch )
+      logging.debug(f'"Retrieving blocks: {latest_blocks}')
 
       if latest_blocks['blockchain']:
 
-        for b in latest_blocks['blockchain']:
-          print_block_info(get_block_details(b[0]))
-          time.sleep(5)
+        for block in latest_blocks['blockchain']:
+          value_transfers = block[4]
+          status_confirmed = block[10]
 
-        oldest_epoch = latest_blocks['blockchain'][-1][1]
+          # print only confirmed blocks
+          if (status_confirmed == True):
+            oldest_epoch = block[1]
+            if (value_transfers > 0):
+              print_block_info(get_block_details(block[0]))
+              time.sleep(5)
+            else:
+              # confirmed block, but w/o vtx
+              time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block[2]))
+              print(f'{time_formatted} - {block[1]} - {block[0]} - no value transactions.')
 
     time.sleep(poll_secs_interval)
 
