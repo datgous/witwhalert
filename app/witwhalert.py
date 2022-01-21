@@ -9,6 +9,7 @@ explorer_url = os.getenv('explorer_url')
 
 # Explorer polling interval (secs). Be nice!
 poll_secs_interval = int(os.getenv('poll_secs_interval'))
+poll_try_limit = int(os.getenv('poll_try_limit'))
 
 # Values (in WIT) over this threshold trigger a tweet
 value_threshold = int(os.getenv('value_threshold'))
@@ -50,15 +51,19 @@ def update_blocks(last_epoch=0):
   else:
     update_url = f'{explorer_url}/blockchain?action=update&block={last_epoch}'
 
-  try:
-    new_blocks_dict = requests.get(update_url)
-  except requests.exceptions.RequestException as e:
-    raise SystemExit(e)
+  tries = 0
+  while tries < poll_try_limit:
+    try:
+      new_blocks_dict = requests.get(update_url)
 
-  if new_blocks_dict:
-    return new_blocks_dict.json()
-  else:
-    return {}
+      if new_blocks_dict:
+        return new_blocks_dict.json()
+      else:
+        return {}
+
+    except requests.exceptions.RequestException as e:
+      tries += 1
+
 
 
 def get_last_epoch():
@@ -90,7 +95,7 @@ def get_last_confirmed_epoch():
         confirmed_epoch = block[1]
         logging.info(f'{block[1]} - latest confirmed block is {block[0]}.')
         break
-    look_back = look_back + look_back
+    look_back += look_back
 
   return confirmed_epoch
 
@@ -127,7 +132,7 @@ def print_block_info(block_dict):
       print(f"    >> Account {tx['real_output_address']} received * {scaled_value:.0f} * WITs (txn hash: {tx['txn_hash']})")
 
       if scaled_value >= value_threshold:
-        msg=f"    🦎🐳🔔 * 💰 {scaled_value:.2f} WITs changed hands! 💸 Assets went to {tx['real_output_address']}. 👀 See the transaction log -> https://witnet.network/search/{tx['txn_hash']}"
+        msg=f"    🦎🐳🔔 * 💰 {scaled_value:.0f} WITs changed hands! 💸 Assets went to {tx['real_output_address']}. 👀 Want to see it? -> https://witnet.network/search/{tx['txn_hash']}"
         print(msg)
         if enable_tweets:
           twitter_post(msg)
@@ -186,6 +191,7 @@ def main():
       logging.debug(f'"Retrieving blocks: {latest_blocks}')
 
       if latest_blocks['blockchain']:
+        print(f"> [{len(latest_blocks['blockchain'])}] blocks retrieved, processing ...")
 
         for block in latest_blocks['blockchain']:
           value_transfers = block[4]
