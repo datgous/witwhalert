@@ -117,6 +117,21 @@ def get_value_txns(block_hash):
   return value_txns
 
 
+def twitter_utf_bold(amount):
+  math_sans_bold = {
+  0: "\uD835\uDFEC", 1: "\uD835\uDFED", 2: "\uD835\uDFEE", 3: "\uD835\uDFEF", 4: "\uD835\uDFF0",
+  5: "\uD835\uDFF1", 6: "\uD835\uDFF2", 7: "\uD835\uDFF3", 8: "\uD835\uDFF4", 9: "\uD835\uDFF5" }
+
+  amount_to_str = str(amount)
+  boldened_str = ""
+
+  for char in amount_to_str:
+    if char in '0123456789':
+      boldened_str += math_sans_bold[int(char)].encode('utf-16', 'surrogatepass').decode('utf-16')
+
+  return boldened_str
+
+
 def print_block_info(block_dict):
   block_hash = block_dict['block_hash']
   epoch = block_dict['epoch']
@@ -132,7 +147,9 @@ def print_block_info(block_dict):
       print(f"    >> Account {tx['real_output_address']} received * {scaled_value:.0f} * WITs (txn hash: {tx['txn_hash']})")
 
       if scaled_value >= value_threshold:
-        msg=f"    🦎🐳🔔 * 💰 {scaled_value:.0f} WITs changed hands! 💸 Assets went to {tx['real_output_address']}. 👀 Want to see it? -> https://witnet.network/search/{tx['txn_hash']}"
+        scaled_value_bold = twitter_utf_bold(f'{scaled_value:.0f}')
+        output_addresses = ", ".join(tx['real_output_address'])
+        msg=f"    🦎🐳🔔 * 💰 {scaled_value_bold} WITs changed hands! 💸 Assets went to {output_addresses}. 👀 Want to see it? -> https://witnet.network/search/{tx['txn_hash']}"
         print(msg)
         if enable_tweets:
           twitter_post(msg)
