@@ -32,7 +32,7 @@ def get_block(block_hash):
   block_dict={}
 
   try:
-    block_dict = requests.get(blocks_url)
+    block_dict = requests.get(blocks_url, timeout=10)
   except requests.exceptions.RequestException as e:
     raise SystemExit(e)
 
@@ -58,7 +58,7 @@ def update_blocks(last_epoch=0):
 
   for i in range(0,4):
     try:
-      new_blocks_dict = requests.get(update_url)
+      new_blocks_dict = requests.get(update_url, timeout=10)
 
       if new_blocks_dict:
         return new_blocks_dict.json()
