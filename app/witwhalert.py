@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import requests, json, time, logging
 import os, tweepy
 from dotenv import load_dotenv
@@ -12,7 +14,8 @@ poll_secs_interval = int(os.getenv('poll_secs_interval'))
 poll_try_limit = int(os.getenv('poll_try_limit'))
 
 # Values (in WIT) over this threshold trigger a tweet
-value_threshold = int(os.getenv('value_threshold'))
+low_threshold = int(os.getenv('low_threshold'))
+high_threshold = int(os.getenv('high_threshold'))
 
 # Publish alerts as tweets
 # Careful with booleans! dotenv retrieves config purely as strings.
@@ -52,7 +55,8 @@ def update_blocks(last_epoch=0):
     update_url = f'{explorer_url}/blockchain?action=update&block={last_epoch}'
 
   tries = 0
-  while tries < poll_try_limit:
+
+  for i in range(0,4):
     try:
       new_blocks_dict = requests.get(update_url)
 
@@ -62,8 +66,13 @@ def update_blocks(last_epoch=0):
         return {}
 
     except requests.exceptions.RequestException as e:
-      tries += 1
+      time.sleep(60)
+      print(traceback.format_exc())
+      print('request exception! continue ...')
+      continue
 
+    print('successful request, breaking')
+    break
 
 
 def get_last_epoch():
@@ -132,6 +141,35 @@ def twitter_utf_bold(amount):
   return boldened_str
 
 
+def get_message(amount):
+  # Partition the space between top&bottom value thresholds evenly,
+  # returns a message according to the amount. Only the messages list should need amending.
+  messages=[
+  f"🦎🐳🔔 *",
+  f"🦎🐳🐳🔔 * A humpback whale! Nice one -> ",
+  f"🦎🐳🐳🐳🔔 * Whoa! A finback whale breached! That is BIG ->",
+  f"🦎🐳🐳🐳🐳🔔 * A-M-A-Z-I-N-G! A blue whale!! Look at the size of that ->"
+  ]
+
+  if len(messages) == 0:
+    return []
+  elif len(messages) == 1:
+    return messages[0]
+  else:
+    span = int( (high_threshold - low_threshold) / ( len(messages) - 1 ) )
+
+    # locate amount in the amount space
+    for p in range( len(messages) ):
+      boundary = span * p + low_threshold
+
+      if amount <= boundary:
+        return messages[p-1]
+        break
+      elif amount >= high_threshold:
+        return messages[-1]
+        break
+
+
 def print_block_info(block_dict):
   block_hash = block_dict['block_hash']
   epoch = block_dict['epoch']
@@ -142,15 +180,18 @@ def print_block_info(block_dict):
 
   if value_txns:
     for tx in value_txns:
-      # Log to console and send twit if over threshold
-      scaled_value = tx['txn_value']*1E-9
-      print(f"    >> Account {tx['real_output_address']} received * {scaled_value:.0f} * WITs (txn hash: {tx['txn_hash']})")
+      # Log to console and send tweet if over threshold (and tweets are enabled)
+      scaled_value = int( tx['txn_value']*1E-9 )
+      print(f"    >> Account {tx['real_output_address']} received * {scaled_value} * WITs (txn hash: {tx['txn_hash']})")
 
-      if scaled_value >= value_threshold:
-        scaled_value_bold = twitter_utf_bold(f'{scaled_value:.0f}')
+      if scaled_value >= low_threshold:
         output_addresses = ", ".join(tx['real_output_address'])
-        msg=f"    🦎🐳🔔 * 💰 {scaled_value_bold} WITs changed hands! 💸 Assets went to {output_addresses}. 👀 Want to see it? -> https://witnet.network/search/{tx['txn_hash']}"
+        bold_scaled_value = twitter_utf_bold(scaled_value)
+        msg = get_message(scaled_value)
+        msg = msg + f" 💰 {bold_scaled_value} WITs changed hands! 💸 Want to see it ? 👀 -> https://witnet.network/search/{tx['txn_hash']}"
+
         print(msg)
+
         if enable_tweets:
           twitter_post(msg)
 
@@ -184,7 +225,7 @@ def start_up():
   #logging.basicConfig(filename='witwhalert.log', level=logging.INFO)
   logging.basicConfig(level=logging.INFO)
   logging.info("witwhalert v0.0.1")
-  logging.info(f'Alert set on transactions >= [{value_threshold}] WITs.')
+  logging.info(f'Alert set on transactions >= [{low_threshold}] WITs.')
   logging.info(f'Enable tweets is [{enable_tweets}].' )
   print()
 
@@ -207,15 +248,15 @@ def main():
       latest_blocks = update_blocks( oldest_epoch )
       logging.debug(f'"Retrieving blocks: {latest_blocks}')
 
-      if latest_blocks['blockchain']:
+      if 'blockchain' in latest_blocks.keys():
         print(f"> [{len(latest_blocks['blockchain'])}] blocks retrieved, processing ...")
 
         for block in latest_blocks['blockchain']:
           value_transfers = block[4]
-          status_confirmed = block[10]
+          is_confirmed = block[10]
 
           # print only confirmed blocks
-          if (status_confirmed == True):
+          if (is_confirmed == True):
             oldest_epoch = block[1]
             if (value_transfers > 0):
               print_block_info(get_block_details(block[0]))
