@@ -78,7 +78,7 @@ def update_blocks(last_epoch=0):
 def get_last_epoch():
   latest_blocks = update_blocks(0)
 
-  if latest_blocks['blockchain']:
+  if 'blockchain' in latest_blocks.keys():
     last_epoch = latest_blocks['blockchain'][-1][1]
   else:
     print('Could not retrieve last epoch')
