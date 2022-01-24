@@ -33,8 +33,10 @@ def get_block(block_hash):
 
   try:
     block_dict = requests.get(blocks_url, timeout=10)
-  except requests.exceptions.RequestException as e:
-    raise SystemExit(e)
+  except Timeout:
+    logging.info('request timed out')
+    logging.debug("get_block/block_dict : ", block_dict)
+
 
   if not block_dict:
     print(f'Could not retrieve block {block_hash}')
@@ -67,7 +69,6 @@ def update_blocks(last_epoch=0):
 
     except requests.exceptions.RequestException as e:
       time.sleep(60)
-      print(traceback.format_exc())
       print('request exception! continue ...')
       continue
 
