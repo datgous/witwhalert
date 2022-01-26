@@ -24,7 +24,7 @@ enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
 # Twitter stuff
 consumer_key = os.getenv('consumer_key')
 consumer_secret = os.getenv('consumer_secret')
-client = ""
+
 
 
 def get_block(block_hash):
@@ -176,7 +176,7 @@ def get_message(amount):
         break
 
 
-def print_block_info(block_dict):
+def print_block_info(block_dict, client):
   block_hash = block_dict['block_hash']
   epoch = block_dict['epoch']
   time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_dict['time']))
@@ -199,7 +199,7 @@ def print_block_info(block_dict):
         print(msg)
 
         if enable_tweets:
-          twitter_post(msg)
+          twitter_post(client, msg)
 
 
 def setup_twitter_api():
@@ -215,15 +215,14 @@ def setup_twitter_api():
   auth.get_access_token(pin_code)
   print('ACCESS_TOKEN = "%s"' % auth.access_token)
   print('ACCESS_TOKEN_SECRET = "%s"' % auth.access_token_secret)
-
-  global client
-  client = tweepy.Client( consumer_key = consumer_key,
+  
+  return tweepy.Client( consumer_key = consumer_key,
                           consumer_secret = consumer_secret ,
                           access_token = auth.access_token,
                           access_token_secret = auth.access_token_secret)
 
 
-def twitter_post(message):
+def twitter_post(client, message):
   response = client.create_tweet(text=message)
 
 
@@ -240,7 +239,7 @@ def main():
   start_up()
 
   if enable_tweets:
-    setup_twitter_api()
+    client = setup_twitter_api()
 
   oldest_epoch = get_last_confirmed_epoch() - 1
   #oldest_epoch = 888302
@@ -265,7 +264,7 @@ def main():
           if (is_confirmed == True):
             oldest_epoch = block[1]
             if (value_transfers > 0):
-              print_block_info(get_block_details(block[0]))
+              print_block_info(get_block_details(block[0]), client)
               time.sleep(5)
             else:
               # confirmed block, but w/o vtx
