@@ -309,9 +309,8 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  #oldest_epoch = get_last_confirmed_epoch() - 1
-  #oldest_epoch = 902936
-  oldest_epoch = 904497
+  oldest_epoch = get_last_confirmed_epoch() - 1
+  #oldest_epoch = 904497
 
 
   while True:
