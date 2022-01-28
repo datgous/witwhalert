@@ -223,7 +223,10 @@ def setup_twitter_api():
 
 
 def twitter_post(twitter_client, message):
-  response = twitter_client.create_tweet(text=message)
+  try:
+    response = twitter_client.create_tweet(text=message)
+  except:
+    logging.info("Could not post to Twitter.")
 
 
 def setup_telegram_api():
@@ -269,7 +272,10 @@ def telegram_post(telegram_bot, message):
     telegram_chat_name = os.getenv('telegram_chat_name')
     telegram_chat_id = telegram_get_chat_id(telegram_bot, telegram_chat_name)
 
-  telegram_bot.send_message(text=message, chat_id=telegram_chat_id, disable_web_page_preview=True)
+  try:
+    telegram_bot.send_message(text=message, chat_id=telegram_chat_id, disable_web_page_preview=True)
+  except:
+    logging.info("Could not post to Telegram.")
 
 
 def start_up(twitter_client, telegram_bot):
@@ -303,8 +309,9 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  oldest_epoch = get_last_confirmed_epoch() - 1
+  #oldest_epoch = get_last_confirmed_epoch() - 1
   #oldest_epoch = 902936
+  oldest_epoch = 904497
 
 
   while True:
