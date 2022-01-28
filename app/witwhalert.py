@@ -3,31 +3,14 @@
 import requests, json, time, logging
 import os, tweepy
 from dotenv import load_dotenv
+import telegram
 
 load_dotenv()
 
-# Explorer API url
-explorer_url = os.getenv('explorer_url')
-
-# Explorer polling interval (secs). Be nice!
-poll_secs_interval = int(os.getenv('poll_secs_interval'))
-poll_try_limit = int(os.getenv('poll_try_limit'))
-
-# Values (in WIT) over this threshold trigger a tweet
-low_threshold = int(os.getenv('low_threshold'))
-high_threshold = int(os.getenv('high_threshold'))
-
-# Publish alerts as tweets
-# Careful with booleans! dotenv retrieves config purely as strings.
-enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
-
-# Twitter stuff
-consumer_key = os.getenv('consumer_key')
-consumer_secret = os.getenv('consumer_secret')
-
-
 
 def get_block(block_hash):
+  explorer_url = os.getenv('explorer_url')
+
   blocks_url= f"{explorer_url}/hash?value={block_hash}"
   block_dict={}
 
@@ -36,7 +19,6 @@ def get_block(block_hash):
   except Timeout:
     logging.info('request timed out')
     logging.debug("get_block/block_dict : ", block_dict)
-
 
   if not block_dict:
     print(f'Could not retrieve block {block_hash}')
@@ -51,6 +33,8 @@ def get_block_details(block_hash):
 
 
 def update_blocks(last_epoch=0):
+  explorer_url = os.getenv('explorer_url')
+
   if last_epoch == 0:
     update_url = f'{explorer_url}/blockchain?action=init&block=-1'
   else:
@@ -150,11 +134,14 @@ def twitter_utf_bold(amount):
 def get_message(amount):
   # Partition the space between top&bottom value thresholds evenly,
   # returns a message according to the amount. Only the messages list should need amending.
+  low_threshold = int(os.getenv('low_threshold'))
+  high_threshold = int(os.getenv('high_threshold'))  
+
   messages=[
   f"🦎🐳🔔 *",
-  f"🦎🐳🐳🔔 * A humpback whale! Nice one -> ",
-  f"🦎🐳🐳🐳🔔 * Whoa! A finback whale breached! That is BIG ->",
-  f"🦎🐳🐳🐳🐳🔔 * A-M-A-Z-I-N-G! A blue whale!! Look at the size of that ->"
+  f"🦎🐳🐳🔔 * A humpback whale! Nice one ⇢",
+  f"🦎🐳🐳🐳🔔 * Whoa! A finback whale breached! That is BIG ⇢",
+  f"🦎🐳🐳🐳🐳🔔 * A-M-A-Z-I-N-G! A blue whale!! Look at the size of that ⇢"
   ]
 
   if len(messages) == 0:
@@ -164,19 +151,26 @@ def get_message(amount):
   else:
     span = int( (high_threshold - low_threshold) / ( len(messages) - 1 ) )
 
+    if amount <= low_threshold:
+      return messages[0]
+
     # locate amount in the amount space
     for p in range( len(messages) ):
       boundary = span * p + low_threshold
-
       if amount <= boundary:
         return messages[p-1]
-        break
       elif amount >= high_threshold:
         return messages[-1]
-        break
 
 
-def print_block_info(block_dict, client):
+def print_block_info(block_dict, twitter_client, telegram_bot):
+
+  # Values (in WIT) over this threshold trigger a tweet
+  low_threshold = int(os.getenv('low_threshold'))
+  high_threshold = int(os.getenv('high_threshold'))
+  enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
+  enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
+
   block_hash = block_dict['block_hash']
   epoch = block_dict['epoch']
   time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_dict['time']))
@@ -194,15 +188,21 @@ def print_block_info(block_dict, client):
         output_addresses = ", ".join(tx['real_output_address'])
         bold_scaled_value = twitter_utf_bold(scaled_value)
         msg = get_message(scaled_value)
-        msg = msg + f" 💰 {bold_scaled_value} WITs changed hands! 💸 Want to see it ? 👀 -> https://witnet.network/search/{tx['txn_hash']}"
+        msg = msg + f" 💰 {bold_scaled_value} WITs changed hands! 💸 Take a look? 👀 ⇝ https://witnet.network/search/{tx['txn_hash']}"
 
         print(msg)
 
         if enable_tweets:
-          twitter_post(client, msg)
+          twitter_post(twitter_client, msg)
+
+        if enable_telegram:
+          telegram_post(telegram_bot, msg)
 
 
 def setup_twitter_api():
+  consumer_key = os.getenv('consumer_key')
+  consumer_secret = os.getenv('consumer_secret')
+
   # api credentials
   auth = tweepy.OAuthHandler(consumer_key, consumer_secret, 'oob')
 
@@ -215,34 +215,97 @@ def setup_twitter_api():
   auth.get_access_token(pin_code)
   print('ACCESS_TOKEN = "%s"' % auth.access_token)
   print('ACCESS_TOKEN_SECRET = "%s"' % auth.access_token_secret)
-  
+
   return tweepy.Client( consumer_key = consumer_key,
                           consumer_secret = consumer_secret ,
                           access_token = auth.access_token,
                           access_token_secret = auth.access_token_secret)
 
 
-def twitter_post(client, message):
-  response = client.create_tweet(text=message)
+def twitter_post(twitter_client, message):
+  response = twitter_client.create_tweet(text=message)
 
 
-def start_up():
+def setup_telegram_api():
+  telegram_token = os.getenv('telegram_token')
+
+  try:
+    telegram_bot = telegram.Bot(token=telegram_token)
+    return telegram_bot
+  except:
+    logging.info("Telegram auth failed. Is the bot's token correct?")
+
+
+def telegram_get_chat_id(telegram_bot, telegram_chat_name):
+
+  telegram_chat_id = os.getenv('telegram_chat_id')
+  telegram_chat_name = os.getenv('telegram_chat_name')
+
+  if not telegram_chat_id:
+    try:
+      updates = telegram_bot.get_updates()
+      for u in updates:
+        try:
+          if u.message.chat.title == telegram_chat_name:
+            telegram_chat_id = u.message.chat.id
+            break
+        except:
+          # no chat attribute
+          continue
+
+    except:
+      logging.error("Could not get Telegram updates.")
+
+  if not telegram_chat_id:
+    logging.error("Could not find chat_id for chat ", telegram_chat_name)
+
+  return telegram_chat_id
+
+
+def telegram_post(telegram_bot, message):
+  telegram_chat_id = os.getenv('telegram_chat_id')
+
+  if not telegram_chat_id:
+    telegram_chat_name = os.getenv('telegram_chat_name')
+    telegram_chat_id = telegram_get_chat_id(telegram_bot, telegram_chat_name)
+
+  telegram_bot.send_message(text=message, chat_id=telegram_chat_id, disable_web_page_preview=True)
+
+
+def start_up(twitter_client, telegram_bot):
+
+  enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
+  enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
+  low_threshold = int(os.getenv('low_threshold'))
+  high_threshold = int(os.getenv('high_threshold'))
+
+  if enable_tweets:
+    twitter_client = setup_twitter_api()
+  if enable_telegram:
+    telegram_bot = setup_telegram_api()
+
   #logging.basicConfig(filename='witwhalert.log', level=logging.INFO)
   logging.basicConfig(level=logging.INFO)
   logging.info("witwhalert v0.0.1")
-  logging.info(f'Alert set on transactions >= [{low_threshold}] WITs.')
+  logging.info(f'Alert on transactions >= [{low_threshold}-{high_threshold}] WITs.')
   logging.info(f'Enable tweets is [{enable_tweets}].' )
+  logging.info(f'Enable telegram is [{enable_telegram}].' )
   print()
+  
+  return twitter_client, telegram_bot
 
 
 def main():
-  start_up()
 
-  if enable_tweets:
-    client = setup_twitter_api()
+  poll_secs_interval = int(os.getenv('poll_secs_interval'))
+  poll_try_limit = int(os.getenv('poll_try_limit'))
+
+  twitter_client = telegram_bot = None
+  twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
   oldest_epoch = get_last_confirmed_epoch() - 1
-  #oldest_epoch = 888302
+  #oldest_epoch = 902936
+
 
   while True:
 
@@ -264,7 +327,7 @@ def main():
           if (is_confirmed == True):
             oldest_epoch = block[1]
             if (value_transfers > 0):
-              print_block_info(get_block_details(block[0]), client)
+              print_block_info(get_block_details(block[0]), twitter_client, telegram_bot)
               time.sleep(5)
             else:
               # confirmed block, but w/o vtx
