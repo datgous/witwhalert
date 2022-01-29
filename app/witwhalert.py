@@ -188,7 +188,8 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
         output_addresses = ", ".join(tx['real_output_address'])
         bold_scaled_value = twitter_utf_bold(scaled_value)
         msg = get_message(scaled_value)
-        msg = msg + f" 💰 {bold_scaled_value} WITs changed hands! 💸 Take a look? 👀 ⇝ https://witnet.network/search/{tx['txn_hash']}"
+        explorer_link = f"https://witnet.network/search/{tx['txn_hash']}"
+        msg = msg + f" 💰 {bold_scaled_value} WITs changed hands! 💸 <a href='{explorer_link}'>Take a look?</a> 👀"
 
         print(msg)
 
@@ -273,7 +274,7 @@ def telegram_post(telegram_bot, message):
     telegram_chat_id = telegram_get_chat_id(telegram_bot, telegram_chat_name)
 
   try:
-    telegram_bot.send_message(text=message, chat_id=telegram_chat_id, disable_web_page_preview=True)
+    telegram_bot.send_message(text=message, chat_id=telegram_chat_id, disable_web_page_preview=True, parse_mode='html')
   except:
     logging.info("Could not post to Telegram.")
 
