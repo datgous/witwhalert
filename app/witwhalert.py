@@ -189,7 +189,7 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
         bold_scaled_value = twitter_utf_bold(scaled_value)
         msg = get_message(scaled_value)
         explorer_link = f"https://witnet.network/search/{tx['txn_hash']}"
-        msg = msg + f" 💰 {bold_scaled_value} WITs changed hands! 💸 <a href='{explorer_link}'>Take a look?</a> 👀"
+        msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 <a href='{explorer_link}'>Take a look?</a> 👀"
 
         print(msg)
 
