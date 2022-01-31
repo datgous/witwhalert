@@ -189,15 +189,16 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
         bold_scaled_value = twitter_utf_bold(scaled_value)
         msg = get_message(scaled_value)
         explorer_link = f"https://witnet.network/search/{tx['txn_hash']}"
-        msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 <a href='{explorer_link}'>Take a look?</a> 👀"
+        full_msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 Take a look? 👀 ⇢ {explorer_link}"
 
-        print(msg)
+        print(full_msg)
 
         if enable_tweets:
-          twitter_post(twitter_client, msg)
+          twitter_post(twitter_client, full_msg)
 
         if enable_telegram:
-          telegram_post(telegram_bot, msg)
+          full_msg = msg + f" 💰 {bold_scaled_value} WITs <a href='{explorer_link}'>were transferred</a>!"
+          telegram_post(telegram_bot, full_msg)
 
 
 def setup_twitter_api():
@@ -311,7 +312,7 @@ def main():
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
   oldest_epoch = get_last_confirmed_epoch() - 1
-  #oldest_epoch = 904497
+  #oldest_epoch = 910330
 
 
   while True:
