@@ -121,12 +121,14 @@ def twitter_utf_bold(amount):
   0: "\uD835\uDFEC", 1: "\uD835\uDFED", 2: "\uD835\uDFEE", 3: "\uD835\uDFEF", 4: "\uD835\uDFF0",
   5: "\uD835\uDFF1", 6: "\uD835\uDFF2", 7: "\uD835\uDFF3", 8: "\uD835\uDFF4", 9: "\uD835\uDFF5" }
 
-  amount_to_str = str(amount)
+  amount_to_str = f'{round(amount):,}'
   boldened_str = ""
 
   for char in amount_to_str:
     if char in '0123456789':
       boldened_str += math_sans_bold[int(char)].encode('utf-16', 'surrogatepass').decode('utf-16')
+    elif char in ',':
+      boldened_str += ','
 
   return boldened_str
 
@@ -311,8 +313,8 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  oldest_epoch = get_last_confirmed_epoch() - 1
-  #oldest_epoch = 910330
+  #oldest_epoch = get_last_confirmed_epoch() - 1
+  oldest_epoch = 914712
 
 
   while True:
