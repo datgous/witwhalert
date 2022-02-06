@@ -7,6 +7,8 @@ import telegram
 
 load_dotenv()
 
+known_wallets_config = "known_wallets.json"
+
 
 def get_block(block_hash):
   explorer_url = os.getenv('explorer_url')
@@ -137,13 +139,13 @@ def get_message(amount):
   # Partition the space between top&bottom value thresholds evenly,
   # returns a message according to the amount. Only the messages list should need amending.
   low_threshold = int(os.getenv('low_threshold'))
-  high_threshold = int(os.getenv('high_threshold'))  
+  high_threshold = int(os.getenv('high_threshold'))
 
   messages=[
-  f"🦎🐳🔔 *",
-  f"🦎🐳🐳🔔 * A humpback whale! Nice one ⇢",
-  f"🦎🐳🐳🐳🔔 * Whoa! A finback whale breached! That is BIG ⇢",
-  f"🦎🐳🐳🐳🐳🔔 * A-M-A-Z-I-N-G! A blue whale!! Look at the size of that ⇢"
+  f"🔔🐳 *",
+  f"🔔🐳🐳 * A humpback whale! Nice one.",
+  f"🔔🐳🐳🐳 * Whoa! A finback whale breached!",
+  f"🔔🐳🐳🐳🐳 * AMAZING! A massive blue whale!!"
   ]
 
   if len(messages) == 0:
@@ -182,7 +184,8 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
 
   if value_txns:
     for tx in value_txns:
-      # Log to console and send tweet if over threshold (and tweets are enabled)
+
+      # Log to console and send alerts if over threshold (also send to twitter/telegram if enabled)
       scaled_value = int( tx['txn_value']*1E-9 )
       print(f"    >> Account {tx['real_output_address']} received * {scaled_value} * WITs (txn hash: {tx['txn_hash']})")
 
@@ -193,13 +196,48 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
         explorer_link = f"https://witnet.network/search/{tx['txn_hash']}"
         full_msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 Take a look? 👀 ⇢ {explorer_link}"
 
+
+        # transparency
+        transparency_send_msg = ""
+        transparency_receive_msg = ""
+
+        if os.path.exists(known_wallets_config):
+          with open(known_wallets_config,'r') as wallet_file:
+             KNOWN_WALLETS = json.load(wallet_file)
+             logging.info(f"Read known wallets file {known_wallets_config}")
+
+          for input_address in tx['input_address']:
+              if input_address in KNOWN_WALLETS.keys():
+                  transparency_send_msg = f"🔔📸 * The {KNOWN_WALLETS[input_address]} wallet sent {bold_scaled_value} WITs."
+
+          for output_address in tx['real_output_address']:
+              if output_address in KNOWN_WALLETS.keys():
+                  transparency_receive_msg = f"🔔📸 * The {KNOWN_WALLETS[output_address]} wallet received {bold_scaled_value} WITs."
+
+        else:
+          logging.info(f"transparency data not found, please create {known_wallets_config}.")
+
+
+        if transparency_send_msg and transparency_receive_msg:
+          full_msg = f"🔔📸 * The {KNOWN_WALLETS[input_address]} wallet sent {bold_scaled_value} WITs to the {KNOWN_WALLETS[output_address]} wallet."
+        elif transparency_send_msg:
+          full_msg = transparency_send_msg
+        elif transparency_receive_msg:
+          full_msg = transparency_receive_msg
+
+
+        # Alerts to console & messengers
         print(full_msg)
 
         if enable_tweets:
           twitter_post(twitter_client, full_msg)
 
         if enable_telegram:
-          full_msg = msg + f" 💰 {bold_scaled_value} WITs <a href='{explorer_link}'>were transferred</a>!"
+          if transparency_send_msg or transparency_receive_msg:
+            full_msg = full_msg + f" <a href='{explorer_link}'>Check the transaction</a>."
+          else:
+            full_msg = msg + f" 💰 {bold_scaled_value} WITs <a href='{explorer_link}'>were transferred</a>!"
+
           telegram_post(telegram_bot, full_msg)
 
 
@@ -301,7 +339,7 @@ def start_up(twitter_client, telegram_bot):
   logging.info(f'Enable tweets is [{enable_tweets}].' )
   logging.info(f'Enable telegram is [{enable_telegram}].' )
   print()
-  
+
   return twitter_client, telegram_bot
 
 
@@ -313,9 +351,8 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  #oldest_epoch = get_last_confirmed_epoch() - 1
-  oldest_epoch = 914712
-
+  oldest_epoch = get_last_confirmed_epoch() - 1
+  #oldest_epoch = 914712
 
   while True:
 
