@@ -7,8 +7,6 @@ import telegram
 
 load_dotenv()
 
-known_wallets_config = "known_wallets.json"
-
 
 def get_block(block_hash):
   explorer_url = os.getenv('explorer_url')
@@ -174,6 +172,8 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
   high_threshold = int(os.getenv('high_threshold'))
   enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
   enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
+  known_wallets_config = os.getenv('known_wallets_config')
+
 
   block_hash = block_dict['block_hash']
   epoch = block_dict['epoch']
