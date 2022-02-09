@@ -9,6 +9,7 @@ load_dotenv()
 
 
 def get_block(block_hash):
+  poll_secs_interval = int(os.getenv('poll_secs_interval'))
   explorer_url = os.getenv('explorer_url')
 
   blocks_url= f"{explorer_url}/hash?value={block_hash}"
@@ -16,9 +17,10 @@ def get_block(block_hash):
 
   try:
     block_dict = requests.get(blocks_url, timeout=10)
-  except Timeout:
-    logging.info('request timed out')
-    logging.debug("get_block/block_dict : ", block_dict)
+  except:
+    backoff = (poll_secs_interval * 5)  # (poll_secs_interval * 2 ** tries)
+    logging.info(f'Request failed for block with hash {block_hash}. Backing off {backoff} secs...')
+    time.sleep(backoff)
 
   if not block_dict:
     print(f'Could not retrieve block {block_hash}')
@@ -40,24 +42,21 @@ def update_blocks(last_epoch=0):
   else:
     update_url = f'{explorer_url}/blockchain?action=update&block={last_epoch}'
 
-  tries = 0
 
-  for i in range(0,4):
-    try:
-      new_blocks_dict = requests.get(update_url, timeout=10)
+  try:
+    new_blocks_dict = requests.get(update_url, timeout=10)
 
-      if new_blocks_dict:
-        return new_blocks_dict.json()
-      else:
-        return {}
+    if new_blocks_dict:
+      return new_blocks_dict.json()
+    else:
+      return {}
 
-    except requests.exceptions.RequestException as e:
-      time.sleep(60)
-      print('request exception! continue ...')
-      continue
+  except:
+    logging.error('Could not finish update_blocks, exception raised. Continue ...')
+    #time.sleep(60)
+    #continue
+    return {}
 
-    print('successful request, breaking')
-    break
 
 
 def get_last_epoch():
@@ -67,7 +66,7 @@ def get_last_epoch():
     try:
       last_epoch = latest_blocks['blockchain'][-1][1]
     except IndexError:
-      logging.info('Blocks retrieved, but could not find last epoch')
+      logging.error('Blocks retrieved, but could not find last epoch')
       logging.debug("get_last_epoch/latest_blocks : ", latest_blocks)
       last_epoch = 0
   else:
@@ -92,7 +91,7 @@ def get_last_confirmed_epoch():
       block_confirmed = block[10]
       if block_confirmed:
         confirmed_epoch = block[1]
-        logging.info(f'{block[1]} - latest confirmed block is {block[0]}.')
+        logging.info(f'* {block[1]} - latest confirmed block is {block[0]}.')
         break
     look_back += look_back
 
@@ -187,7 +186,8 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
 
       # Log to console and send alerts if over threshold (also send to twitter/telegram if enabled)
       scaled_value = int( tx['txn_value']*1E-9 )
-      print(f"    >> Account {tx['real_output_address']} received * {scaled_value} * WITs (txn hash: {tx['txn_hash']})")
+      #logging.info(f"  >> Account {tx['real_output_address']} received * {scaled_value} * WITs (txn hash: {tx['txn_hash']})")
+      logging.info(f" >> {scaled_value} WITs sent to {tx['real_output_address']} (tx: {tx['txn_hash']})")
 
       if scaled_value >= low_threshold:
         output_addresses = ", ".join(tx['real_output_address'])
@@ -227,7 +227,7 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
 
 
         # Alerts to console & messengers
-        print(full_msg)
+        logging.info(full_msg)
 
         if enable_tweets:
           twitter_post(twitter_client, full_msg)
@@ -332,13 +332,20 @@ def start_up(twitter_client, telegram_bot):
   if enable_telegram:
     telegram_bot = setup_telegram_api()
 
-  #logging.basicConfig(filename='witwhalert.log', level=logging.INFO)
-  logging.basicConfig(level=logging.INFO)
+  logging.basicConfig(
+      level=logging.INFO,
+      format="%(asctime)s [%(levelname)s] %(message)s",
+      handlers=[
+          logging.FileHandler('witwhalert.log'),
+          logging.StreamHandler()
+      ]
+  )
+
   logging.info("witwhalert v0.0.1")
   logging.info(f'Alert on transactions >= [{low_threshold}-{high_threshold}] WITs.')
   logging.info(f'Enable tweets is [{enable_tweets}].' )
   logging.info(f'Enable telegram is [{enable_telegram}].' )
-  print()
+
 
   return twitter_client, telegram_bot
 
@@ -364,7 +371,7 @@ def main():
       logging.debug(f'"Retrieving blocks: {latest_blocks}')
 
       if 'blockchain' in latest_blocks.keys():
-        print(f"> [{len(latest_blocks['blockchain'])}] blocks retrieved, processing ...")
+        logging.info(f"> [{len(latest_blocks['blockchain'])}] blocks retrieved, processing ...")
 
         for block in latest_blocks['blockchain']:
           value_transfers = block[4]
