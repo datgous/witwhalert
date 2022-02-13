@@ -40,7 +40,7 @@ def update_blocks(last_epoch=0):
   if last_epoch == 0:
     update_url = f'{explorer_url}/blockchain?action=init&block=-1'
   else:
-    update_url = f'{explorer_url}/blockchain?action=update&block={last_epoch}'
+    update_url = f'{explorer_url}/blockchain?action=append&block={last_epoch}'
 
 
   try:
