@@ -17,15 +17,11 @@ def get_block(block_hash):
 
   try:
     block_dict = requests.get(blocks_url, timeout=10)
+    return block_dict.json()
   except:
     backoff = (poll_secs_interval * 5)  # (poll_secs_interval * 2 ** tries)
-    logging.info(f'Request failed for block with hash {block_hash}. Backing off {backoff} secs...')
+    logging.error(f'Request failed for block with hash {block_hash}. Backing off {backoff} secs...')
     time.sleep(backoff)
-
-  if not block_dict:
-    print(f'Could not retrieve block {block_hash}')
-
-  return block_dict.json()
 
 
 def get_block_details(block_hash):
@@ -358,17 +354,17 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  oldest_epoch = get_last_confirmed_epoch() - 1
-  #oldest_epoch = 914712
+  last_confirmed_epoch = get_last_confirmed_epoch() - 1
+  #last_confirmed_epoch = 914712
 
   while True:
 
     latest_blocks = {}
 
-    if (get_last_epoch() > oldest_epoch):
+    if (get_last_epoch() > last_confirmed_epoch):
 
-      latest_blocks = update_blocks( oldest_epoch )
-      logging.debug(f'"Retrieving blocks: {latest_blocks}')
+      latest_blocks = update_blocks( last_confirmed_epoch )
+      logging.debug(f'Retrieving blocks: {latest_blocks}')
 
       if 'blockchain' in latest_blocks.keys():
         logging.info(f"> [{len(latest_blocks['blockchain'])}] blocks retrieved, processing ...")
@@ -379,7 +375,10 @@ def main():
 
           # print only confirmed blocks
           if (is_confirmed == True):
-            oldest_epoch = block[1]
+
+            if block[1] > last_confirmed_epoch:
+              last_confirmed_epoch = block[1]
+
             if (value_transfers > 0):
               print_block_info(get_block_details(block[0]), twitter_client, telegram_bot)
               time.sleep(5)
