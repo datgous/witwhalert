@@ -175,15 +175,14 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
   time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_dict['time']))
   value_txns = get_value_txns(block_hash)
 
-  print(f'{time_formatted} - {epoch} - {block_hash} ')
+  logging.info(f'{time_formatted} - {epoch} - {block_hash} ')
 
   if value_txns:
     for tx in value_txns:
 
       # Log to console and send alerts if over threshold (also send to twitter/telegram if enabled)
       scaled_value = int( tx['txn_value']*1E-9 )
-      #logging.info(f"  >> Account {tx['real_output_address']} received * {scaled_value} * WITs (txn hash: {tx['txn_hash']})")
-      logging.info(f" >> {scaled_value} WITs sent to {tx['real_output_address']} (tx: {tx['txn_hash']})")
+      logging.info(f"  >> {scaled_value} WITs sent to {tx['real_output_address']} (tx: {tx['txn_hash']})")
 
       if scaled_value >= low_threshold:
         output_addresses = ", ".join(tx['real_output_address'])
@@ -354,7 +353,7 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  last_confirmed_epoch = get_last_confirmed_epoch() - 1
+  last_confirmed_epoch = get_last_confirmed_epoch()
   #last_confirmed_epoch = 914712
 
   while True:
@@ -366,18 +365,20 @@ def main():
       latest_blocks = update_blocks( last_confirmed_epoch )
       logging.debug(f'Retrieving blocks: {latest_blocks}')
 
-      if 'blockchain' in latest_blocks.keys():
+      if 'blockchain' in latest_blocks:
         logging.info(f"> [{len(latest_blocks['blockchain'])}] blocks retrieved, processing ...")
 
-        for block in latest_blocks['blockchain']:
+        block_list = latest_blocks['blockchain']
+        block_list.sort(key= lambda r:r[1])  # reverse block list for more intuitive output.
+
+        for block in block_list:
           value_transfers = block[4]
           is_confirmed = block[10]
 
           # print only confirmed blocks
           if (is_confirmed == True):
 
-            if block[1] > last_confirmed_epoch:
-              last_confirmed_epoch = block[1]
+            last_confirmed_epoch = block[1] + 1
 
             if (value_transfers > 0):
               print_block_info(get_block_details(block[0]), twitter_client, telegram_bot)
