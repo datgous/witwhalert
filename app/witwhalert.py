@@ -98,17 +98,22 @@ def get_value_txns(block_hash):
   block_dict = get_block(block_hash)
   value_txns = []
 
-  if  block_dict['value_transfer_txns']:
+  try:
+    if  block_dict['value_transfer_txns']:
 
-    for vtx in block_dict['value_transfer_txns']:
-      txn_hash = vtx['txn_hash']
-      input_address = vtx['unique_input_addresses']
-      real_output_address = vtx['real_output_addresses']
-      txn_value = (vtx['value'])
-      vtt_entry = {'txn_hash': txn_hash, 'input_address': input_address, 'real_output_address': real_output_address, "txn_value": txn_value }
-      value_txns.append(vtt_entry)
+      for vtx in block_dict['value_transfer_txns']:
+        txn_hash = vtx['txn_hash']
+        input_address = vtx['unique_input_addresses']
+        real_output_address = vtx['real_output_addresses']
+        txn_value = (vtx['value'])
+        vtt_entry = {'txn_hash': txn_hash, 'input_address': input_address, 'real_output_address': real_output_address, "txn_value": txn_value }
+        value_txns.append(vtt_entry)
 
-  return value_txns
+    return value_txns
+
+  except TypeError as e:
+    logging.error('No value_transfer txns in block', block_hash)
+    logging.debug("TypeError returned: ", e)
 
 
 def twitter_utf_bold(amount):
