@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-import requests, json, time, logging
-import os, tweepy
+import requests, json, time, logging, os, random
 from dotenv import load_dotenv
-import telegram
+import tweepy, telegram
 
 load_dotenv()
 
@@ -12,7 +11,7 @@ def get_block(block_hash):
   poll_secs_interval = int(os.getenv('poll_secs_interval'))
   explorer_url = os.getenv('explorer_url')
 
-  blocks_url= f"{explorer_url}/hash?value={block_hash}"
+  blocks_url= f"{explorer_url}/api/hash?value={block_hash}"
   block_dict={}
 
   try:
@@ -34,9 +33,9 @@ def update_blocks(last_epoch=0):
   explorer_url = os.getenv('explorer_url')
 
   if last_epoch == 0:
-    update_url = f'{explorer_url}/blockchain?action=init&block=-1'
+    update_url = f'{explorer_url}/api/blockchain?action=init&block=-1'
   else:
-    update_url = f'{explorer_url}/blockchain?action=append&block={last_epoch}'
+    update_url = f'{explorer_url}/api/blockchain?action=append&block={last_epoch}'
 
 
   try:
@@ -140,105 +139,133 @@ def get_message(amount):
   high_threshold = int(os.getenv('high_threshold'))
 
   messages=[
-  f"🔔🐳 *",
-  f"🔔🐳🐳 * A humpback whale! Nice one.",
-  f"🔔🐳🐳🐳 * Whoa! A finback whale breached!",
-  f"🔔🐳🐳🐳🐳 * AMAZING! A massive blue whale!!"
+  { "msg": f"🔔🌱 * Plankton. So tiny.", "weight": 0.3 },
+  { "msg": f"🔔🦐 * Hah! Little prawn.", "weight": 0.35 },
+  { "msg": f"🔔🐡 * Fugu, small and toxic.", "weight": 0.35 },
+  { "msg": f"🔔🐟 * A delicious sardine.", "weight": 0.4 },
+  { "msg": f"🔔🐠 * A pretty parrotfish.", "weight": 0.45 },
+  { "msg": f"🔔🐟 * Tuna in the almadraba.", "weight": 0.5 },
+  { "msg": f"🔔🐬 * A surfer dolphin.", "weight": 0.6 },
+  { "msg": f"🔔🐳 * A minke whale! Beautiful.", "weight": 1.0 },
+  { "msg": f"🔔🐳🐳 * A humpback whale! Nice one.", "weight": 1.0 },
+  { "msg": f"🔔🐳🐳🐳 * Whoa! A finback whale breached!", "weight": 1.0 },
+  { "msg": f"🔔🐳🐳🐳🐳 * AMAZING! A massive blue whale!!", "weight": 1.0 },
   ]
 
+
+  # Deal with no messages or a single message first...
   if len(messages) == 0:
     return []
   elif len(messages) == 1:
-    return messages[0]
+    return messages[0]['msg']
   else:
+    # ...otherwise divide the amount space into even spans
     span = int( (high_threshold - low_threshold) / ( len(messages) - 1 ) )
 
     if amount <= low_threshold:
-      return messages[0]
+      return []
 
     # locate amount in the amount space
-    for p in range( len(messages) ):
-      boundary = span * p + low_threshold
+    for i in range( len(messages) ):
+      boundary = span * i + low_threshold
       if amount <= boundary:
-        return messages[p-1]
+
+        msg = messages[i-1]['msg']
+        weight = messages[i-1]['weight']
+        dice = random.uniform(0, 1)
+
+        # messages are published or not depending on dice vs weight
+        if dice <= weight:
+            logging.info(f"Lucky dice -> amount: {amount}, span: {span}, weight: {weight}, dice: {dice}")
+            return msg
+        else:
+            logging.info(f"Unlucky dice -> amount: {amount}, span: {span}, weight: {weight}, dice: {dice}")
+            return []
       elif amount >= high_threshold:
-        return messages[-1]
+        return messages[-1]['msg']
+
+
+
+def get_transparency_message(tx):
+    known_wallets_config = os.getenv('known_wallets_config')
+
+    transparency_send_msg = ""
+    transparency_receive_msg = ""
+
+    if os.path.exists(known_wallets_config):
+        with open(known_wallets_config, 'r') as wallet_file:
+            KNOWN_WALLETS = json.load(wallet_file)
+            logging.info(f"Read known wallets file {known_wallets_config}")
+
+        for input_address in tx['input_address']:
+            if input_address in KNOWN_WALLETS:
+                transparency_send_msg = f"🔔📸 * The known {KNOWN_WALLETS[input_address]} wallet sent some ⇢"
+
+        for output_address in tx['real_output_address']:
+            if output_address in KNOWN_WALLETS:
+                transparency_receive_msg = f"🔔📸 * The known {KNOWN_WALLETS[output_address]} wallet received some ⇢"
+
+    else:
+        logging.info(f"Transparency data not found, please create {known_wallets_config}.")
+
+    if transparency_send_msg and transparency_receive_msg:
+        return f"🔔📸 * The known {KNOWN_WALLETS[input_address]} wallet sent {bold_scaled_value} WITs to the known {KNOWN_WALLETS[output_address]} wallet."
+    elif transparency_send_msg:
+        return transparency_send_msg
+    elif transparency_receive_msg:
+        return transparency_receive_msg
+    else:
+        return ""  # Return an empty string if no transparency message is found
 
 
 def print_block_info(block_dict, twitter_client, telegram_bot):
 
-  # Values (in WIT) over this threshold trigger a tweet
-  low_threshold = int(os.getenv('low_threshold'))
-  high_threshold = int(os.getenv('high_threshold'))
-  enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
-  enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
-  known_wallets_config = os.getenv('known_wallets_config')
+    # Values (in WIT) over this threshold trigger a tweet
+    low_threshold = int(os.getenv('low_threshold'))
+    high_threshold = int(os.getenv('high_threshold'))
+    enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
+    enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
+    explorer_url = os.getenv('explorer_url')
+
+    block_hash = block_dict['block_hash']
+    epoch = block_dict['epoch']
+    time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_dict['time']))
+    value_txns = get_value_txns(block_hash)
+
+    logging.info(f'{time_formatted} - {epoch} - {block_hash} ')
 
 
-  block_hash = block_dict['block_hash']
-  epoch = block_dict['epoch']
-  time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_dict['time']))
-  value_txns = get_value_txns(block_hash)
+    if value_txns:
+        for tx in value_txns:
+            scaled_value = int(tx['txn_value'] * 1E-9)
+            logging.info(f"  >> {scaled_value} WITs sent to {tx['real_output_address']} (tx: {tx['txn_hash']})")
 
-  logging.info(f'{time_formatted} - {epoch} - {block_hash} ')
+            if scaled_value >= low_threshold:
+                output_addresses = ", ".join(tx['real_output_address'])
+                bold_scaled_value = twitter_utf_bold(scaled_value)
 
-  if value_txns:
-    for tx in value_txns:
+                # If tx belongs to a known wallet, get transparency message.
+                transparency_msg = get_transparency_message(tx)
 
-      # Log to console and send alerts if over threshold (also send to twitter/telegram if enabled)
-      scaled_value = int( tx['txn_value']*1E-9 )
-      logging.info(f"  >> {scaled_value} WITs sent to {tx['real_output_address']} (tx: {tx['txn_hash']})")
+                if transparency_msg:
+                    msg = transparency_msg
+                else:
+                    msg = get_message(scaled_value)
 
-      if scaled_value >= low_threshold:
-        output_addresses = ", ".join(tx['real_output_address'])
-        bold_scaled_value = twitter_utf_bold(scaled_value)
-        msg = get_message(scaled_value)
-        explorer_link = f"https://witnet.network/search/{tx['txn_hash']}"
-        full_msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 Take a look? 👀 ⇢ {explorer_link}"
+                # msg is blank if no messages are configured, amount is lower than low_threshold, or dice wins weight.
+                if msg:
+                  explorer_link = f"{explorer_url}/search/{tx['txn_hash']}"
+                  full_msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 Take a look? 👀 ⇢ {explorer_link}"
 
+                  logging.info(full_msg)
 
-        # transparency
-        transparency_send_msg = ""
-        transparency_receive_msg = ""
+                  if enable_tweets:
+                      logging.debug(f"Sending message to Twitter...")
+                      twitter_post(twitter_client, full_msg)
 
-        if os.path.exists(known_wallets_config):
-          with open(known_wallets_config,'r') as wallet_file:
-             KNOWN_WALLETS = json.load(wallet_file)
-             logging.info(f"Read known wallets file {known_wallets_config}")
-
-          for input_address in tx['input_address']:
-              if input_address in KNOWN_WALLETS.keys():
-                  transparency_send_msg = f"🔔📸 * The {KNOWN_WALLETS[input_address]} wallet sent {bold_scaled_value} WITs."
-
-          for output_address in tx['real_output_address']:
-              if output_address in KNOWN_WALLETS.keys():
-                  transparency_receive_msg = f"🔔📸 * The {KNOWN_WALLETS[output_address]} wallet received {bold_scaled_value} WITs."
-
-        else:
-          logging.info(f"transparency data not found, please create {known_wallets_config}.")
-
-
-        if transparency_send_msg and transparency_receive_msg:
-          full_msg = f"🔔📸 * The {KNOWN_WALLETS[input_address]} wallet sent {bold_scaled_value} WITs to the {KNOWN_WALLETS[output_address]} wallet."
-        elif transparency_send_msg:
-          full_msg = transparency_send_msg
-        elif transparency_receive_msg:
-          full_msg = transparency_receive_msg
-
-
-        # Alerts to console & messengers
-        logging.info(full_msg)
-
-        if enable_tweets:
-          twitter_post(twitter_client, full_msg)
-
-        if enable_telegram:
-          if transparency_send_msg or transparency_receive_msg:
-            full_msg = full_msg + f" <a href='{explorer_link}'>Check the transaction</a>."
-          else:
-            full_msg = msg + f" 💰 {bold_scaled_value} WITs <a href='{explorer_link}'>were transferred</a>!"
-
-          telegram_post(telegram_bot, full_msg)
+                  if enable_telegram:
+                      logging.debug("Sending message to Telegram...")
+                      telegram_post(telegram_bot, full_msg + f" <a href='{explorer_link}'>Check the transaction</a>.")
 
 
 def setup_twitter_api():
@@ -268,7 +295,7 @@ def twitter_post(twitter_client, message):
   try:
     response = twitter_client.create_tweet(text=message)
   except:
-    logging.info("Could not post to Twitter.")
+    logging.warning("Could not post to Twitter.")
 
 
 def setup_telegram_api():
@@ -278,7 +305,7 @@ def setup_telegram_api():
     telegram_bot = telegram.Bot(token=telegram_token)
     return telegram_bot
   except:
-    logging.info("Telegram auth failed. Is the bot's token correct?")
+    logging.warning("Telegram auth failed. Is the bot's token correct?")
 
 
 def telegram_get_chat_id(telegram_bot, telegram_chat_name):
@@ -322,6 +349,7 @@ def telegram_post(telegram_bot, message):
 
 def start_up(twitter_client, telegram_bot):
 
+  log_level = logging.getLevelName(os.getenv('log_level'))
   enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
   enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
   low_threshold = int(os.getenv('low_threshold'))
@@ -333,7 +361,7 @@ def start_up(twitter_client, telegram_bot):
     telegram_bot = setup_telegram_api()
 
   logging.basicConfig(
-      level=logging.INFO,
+      level=log_level,
       format="%(asctime)s [%(levelname)s] %(message)s",
       handlers=[
           logging.FileHandler('witwhalert.log'),
@@ -341,7 +369,7 @@ def start_up(twitter_client, telegram_bot):
       ]
   )
 
-  logging.info("witwhalert v0.0.1")
+  logging.info("witwhalert v0.0.2")
   logging.info(f'Alert on transactions >= [{low_threshold}-{high_threshold}] WITs.')
   logging.info(f'Enable tweets is [{enable_tweets}].' )
   logging.info(f'Enable telegram is [{enable_telegram}].' )
@@ -359,7 +387,7 @@ def main():
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
   last_confirmed_epoch = get_last_confirmed_epoch()
-  #last_confirmed_epoch = 914712
+  #last_confirmed_epoch = 2182329
 
   while True:
 
