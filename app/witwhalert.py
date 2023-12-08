@@ -3,9 +3,10 @@
 import requests, json, time, logging, os, random
 from dotenv import load_dotenv
 import tweepy, telegram
+import time
+from datetime import datetime
 
 load_dotenv()
-
 
 def get_block(block_hash):
   poll_secs_interval = int(os.getenv('poll_secs_interval'))
@@ -131,59 +132,55 @@ def twitter_utf_bold(amount):
 
   return boldened_str
 
+def all_messages():
+  messages= [
+  { "weight": "0.30", "limit": "6000", "txt": "🔔🌱 * Plankton. So tiny." },
+  { "weight": "0.35", "limit": "12000", "txt": "🔔🦐 * Hah! Little prawn." },
+  { "weight": "0.35", "limit": "25000", "txt": "🔔🐡 * Fugu, small and toxic." },
+  { "weight": "0.40", "limit": "35000", "txt": "🔔🐟 * A delicious sardine." },
+  { "weight": "0.45", "limit": "45000", "txt": "🔔🐠 * A pretty parrotfish." },
+  { "weight": "0.50", "limit": "50000", "txt": "🔔🐟 * Tuna in the almadraba." },
+  { "weight": "0.60", "limit": "125000", "txt": "🔔🐬 * A surfer dolphin!" },
+  { "weight": "1.00", "limit": "400000", "txt": "🔔🐳 * A minke whale! Beautiful." },
+  { "weight": "1.00", "limit": "500000", "txt": "🔔🐳🐳 * A humpback whale! Nice one." },
+  { "weight": "1.00", "limit": "800000", "txt": "🔔🐳🐳🐳 * Whoa! A finback whale breached!" },
+  { "weight": "1.00", "limit": "1500000", "txt": "🔔🐳🐳🐳🐳 * AMAZING! A massive blue whale!!" },
+  { "weight": "1.00", "limit": "5000000", "txt": "🔔🐙🐙🐙🐙🐙 * Can't be... IT's a KRAKEN!!" },
+  { "weight": "1.00", "limit": "10000000", "txt": "🔔🐍🐍🐍🐍🐍 * Run for your lives! IT's LEVIATHAN!!" },
+  ]
+  return messages
+
+
+def lowest_threshold():
+  messages = all_messages()
+  limit_values = [ int(msg["limit"]) for msg in messages ]
+  lower_limit = min(limit_values)
+  return lower_limit
+
 
 def get_message(amount):
-  # Partition the space between top&bottom value thresholds evenly,
-  # returns a message according to the amount. Only the messages list should need amending.
-  low_threshold = int(os.getenv('low_threshold'))
-  high_threshold = int(os.getenv('high_threshold'))
+  amount = int(amount)
+  messages = all_messages()
+  lower_limit = lowest_threshold()
 
-  messages=[
-  { "msg": f"🔔🌱 * Plankton. So tiny.", "weight": 0.3 },
-  { "msg": f"🔔🦐 * Hah! Little prawn.", "weight": 0.35 },
-  { "msg": f"🔔🐡 * Fugu, small and toxic.", "weight": 0.35 },
-  { "msg": f"🔔🐟 * A delicious sardine.", "weight": 0.4 },
-  { "msg": f"🔔🐠 * A pretty parrotfish.", "weight": 0.45 },
-  { "msg": f"🔔🐟 * Tuna in the almadraba.", "weight": 0.5 },
-  { "msg": f"🔔🐬 * A surfer dolphin.", "weight": 0.6 },
-  { "msg": f"🔔🐳 * A minke whale! Beautiful.", "weight": 1.0 },
-  { "msg": f"🔔🐳🐳 * A humpback whale! Nice one.", "weight": 1.0 },
-  { "msg": f"🔔🐳🐳🐳 * Whoa! A finback whale breached!", "weight": 1.0 },
-  { "msg": f"🔔🐳🐳🐳🐳 * AMAZING! A massive blue whale!!", "weight": 1.0 },
-  ]
-
-
-  # Deal with no messages or a single message first...
-  if len(messages) == 0:
+  if amount < lower_limit:
     return []
-  elif len(messages) == 1:
-    return messages[0]['msg']
+
+  for msg in messages:
+      if amount >= int(msg["limit"]):
+          txt = msg["txt"]
+          weight = float(msg["weight"])
+          limit = msg["limit"]
+
+  dice = random.uniform(0, 1)
+
+  # messages are published or not depending on dice vs weight
+  if weight >= dice:
+      logging.info(f"Lucky dice -> amount: {amount}, limit: {limit}, weight: {weight}, dice: {dice}")
+      return txt
   else:
-    # ...otherwise divide the amount space into even spans
-    span = int( (high_threshold - low_threshold) / ( len(messages) - 1 ) )
-
-    if amount <= low_threshold:
+      logging.info(f"Unlucky dice -> amount: {amount}, limit: {limit}, weight: {weight}, dice: {dice}")
       return []
-
-    # locate amount in the amount space
-    for i in range( len(messages) ):
-      boundary = span * i + low_threshold
-      if amount <= boundary:
-
-        msg = messages[i-1]['msg']
-        weight = messages[i-1]['weight']
-        dice = random.uniform(0, 1)
-
-        # messages are published or not depending on dice vs weight
-        if dice <= weight:
-            logging.info(f"Lucky dice -> amount: {amount}, span: {span}, weight: {weight}, dice: {dice}")
-            return msg
-        else:
-            logging.info(f"Unlucky dice -> amount: {amount}, span: {span}, weight: {weight}, dice: {dice}")
-            return []
-      elif amount >= high_threshold:
-        return messages[-1]['msg']
-
 
 
 def get_transparency_message(tx):
@@ -218,11 +215,44 @@ def get_transparency_message(tx):
         return ""  # Return an empty string if no transparency message is found
 
 
+def get_rate_limit_config():
+    # Your logic to fetch or derive the rate limit values
+    max_calls = int(os.getenv('msg_max'))
+    period = int(os.getenv('msg_period'))
+
+    return max_calls, period
+
+def rate_limited():
+    max_calls, period = get_rate_limit_config()
+    last_time_called = time.monotonic()
+    num_calls = 0
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            nonlocal last_time_called, num_calls
+            now = time.monotonic()
+
+            if now - last_time_called >= period:
+                # Reset counter if period is finished
+                last_time_called = now
+                num_calls = 0
+
+            if num_calls >= max_calls:
+              # Throttle if limit is exceeded
+              logging.warning(f"Function {func.__name__} exceeded {max_calls} calls per {period} second period")
+
+            else:
+              num_calls += 1
+              return func(*args, **kwargs)
+
+        return wrapper
+    return decorator
+
+
 def print_block_info(block_dict, twitter_client, telegram_bot):
 
     # Values (in WIT) over this threshold trigger a tweet
-    low_threshold = int(os.getenv('low_threshold'))
-    high_threshold = int(os.getenv('high_threshold'))
+    lower_limit = lowest_threshold()
     enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
     enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
     explorer_url = os.getenv('explorer_url')
@@ -234,13 +264,12 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
 
     logging.info(f'{time_formatted} - {epoch} - {block_hash} ')
 
-
     if value_txns:
         for tx in value_txns:
             scaled_value = int(tx['txn_value'] * 1E-9)
             logging.info(f"  >> {scaled_value} WITs sent to {tx['real_output_address']} (tx: {tx['txn_hash']})")
 
-            if scaled_value >= low_threshold:
+            if scaled_value >= lower_limit:
                 output_addresses = ", ".join(tx['real_output_address'])
                 bold_scaled_value = twitter_utf_bold(scaled_value)
 
@@ -265,7 +294,8 @@ def print_block_info(block_dict, twitter_client, telegram_bot):
 
                   if enable_telegram:
                       logging.debug("Sending message to Telegram...")
-                      telegram_post(telegram_bot, full_msg + f" <a href='{explorer_link}'>Check the transaction</a>.")
+                      full_msg = msg + f" 💰 {bold_scaled_value} WITs were transferred! 💸 <a href='{explorer_link}'>Check the transaction</a>."
+                      telegram_post(telegram_bot, full_msg)
 
 
 def setup_twitter_api():
@@ -290,7 +320,7 @@ def setup_twitter_api():
                           access_token = auth.access_token,
                           access_token_secret = auth.access_token_secret)
 
-
+@rate_limited()
 def twitter_post(twitter_client, message):
   try:
     response = twitter_client.create_tweet(text=message)
@@ -334,6 +364,7 @@ def telegram_get_chat_id(telegram_bot, telegram_chat_name):
   return telegram_chat_id
 
 
+@rate_limited()
 def telegram_post(telegram_bot, message):
   telegram_chat_id = os.getenv('telegram_chat_id')
 
@@ -343,17 +374,20 @@ def telegram_post(telegram_bot, message):
 
   try:
     telegram_bot.send_message(text=message, chat_id=telegram_chat_id, disable_web_page_preview=True, parse_mode='html')
+  except RateLimitException as e:
+    logging.warning(f"Rate limit exceeded: {e}")
+    pass
   except:
     logging.info("Could not post to Telegram.")
-
+    pass
 
 def start_up(twitter_client, telegram_bot):
 
   log_level = logging.getLevelName(os.getenv('log_level'))
   enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
   enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
-  low_threshold = int(os.getenv('low_threshold'))
-  high_threshold = int(os.getenv('high_threshold'))
+  #low_threshold = int(os.getenv('low_threshold'))
+  #high_threshold = int(os.getenv('high_threshold'))
 
   if enable_tweets:
     twitter_client = setup_twitter_api()
@@ -370,7 +404,7 @@ def start_up(twitter_client, telegram_bot):
   )
 
   logging.info("witwhalert v0.0.2")
-  logging.info(f'Alert on transactions >= [{low_threshold}-{high_threshold}] WITs.')
+  #logging.info(f'Alert on transactions >= [{low_threshold}-{high_threshold}] WITs.')
   logging.info(f'Enable tweets is [{enable_tweets}].' )
   logging.info(f'Enable telegram is [{enable_telegram}].' )
 
@@ -386,8 +420,9 @@ def main():
   twitter_client = telegram_bot = None
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
-  last_confirmed_epoch = get_last_confirmed_epoch()
-  #last_confirmed_epoch = 2182329
+
+  #last_confirmed_epoch = get_last_confirmed_epoch()
+  last_confirmed_epoch = 2179365
 
   while True:
 
@@ -418,7 +453,8 @@ def main():
               time.sleep(5)
             else:
               # confirmed block, but w/o vtx
-              time_formatted = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block[2]))
+              datetime_obj = datetime.fromtimestamp(block[2])
+              time_formatted = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
               print(f'{time_formatted} - {block[1]} - {block[0]} - no value transactions.')
 
     time.sleep(poll_secs_interval)
