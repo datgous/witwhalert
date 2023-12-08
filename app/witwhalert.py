@@ -386,8 +386,8 @@ def start_up(twitter_client, telegram_bot):
   log_level = logging.getLevelName(os.getenv('log_level'))
   enable_tweets = os.getenv('enable_tweets').lower() in ['true', 'yes','y']
   enable_telegram = os.getenv('enable_telegram').lower() in ['true', 'yes','y']
-  #low_threshold = int(os.getenv('low_threshold'))
-  #high_threshold = int(os.getenv('high_threshold'))
+  low_threshold = lowest_threshold()
+
 
   if enable_tweets:
     twitter_client = setup_twitter_api()
@@ -404,7 +404,7 @@ def start_up(twitter_client, telegram_bot):
   )
 
   logging.info("witwhalert v0.0.2")
-  #logging.info(f'Alert on transactions >= [{low_threshold}-{high_threshold}] WITs.')
+  logging.info(f'Alert on transactions >= [{low_threshold}] WITs.')
   logging.info(f'Enable tweets is [{enable_tweets}].' )
   logging.info(f'Enable telegram is [{enable_telegram}].' )
 
@@ -421,8 +421,8 @@ def main():
   twitter_client, telegram_bot = start_up(twitter_client, telegram_bot)
 
 
-  #last_confirmed_epoch = get_last_confirmed_epoch()
-  last_confirmed_epoch = 2179365
+  last_confirmed_epoch = get_last_confirmed_epoch()
+  #last_confirmed_epoch = 2179365
 
   while True:
 
